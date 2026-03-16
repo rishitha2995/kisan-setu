@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Browse Crops</title>
+</head>
+<body>
+    <h1>🛒 Browse Crops</h1>
+    <form id="search-form" method="get" action="/customer" style="margin-bottom:1em;" aria-label="Search crops">
+        <input id="search-input" type="text" name="q" placeholder="Say or type crop name" value="{{ q|default('') }}" style="font-size:1.2rem;padding:0.4rem;width:55%;">
+        <input type="hidden" name="sid" value="{{ sid }}">
+        <button type="submit" style="padding:0.4rem 0.6rem;">Search</button>
+
+        <!-- Language selector for speech recognition -->
+        <label for="voice-lang" style="margin-left:0.6rem;font-weight:bold;">Language:</label>
+        <select id="voice-lang" aria-label="Choose language for voice input" style="margin-left:0.4rem;padding:0.3rem;font-size:1rem;">
+            <option value="en-IN">English (India)</option>
+            <option value="hi-IN">Hindi</option>
+            <option value="kn-IN">Kannada</option>
+            <option value="ta-IN">Tamil</option>
+            <option value="te-IN">Telugu</option>
+        </select>
+
+        <!-- Large, clear voice button -->
+        <button type="button" id="voice-btn" aria-label="Voice search" title="Speak to search" style="font-size:1.6rem;margin-left:0.5rem;padding:0.5rem;border-radius:8px;">🎤</button>
+    </form>
+
+    <div id="voice-status" aria-live="polite" style="min-height:1.2rem;color:#333;font-weight:bold;"></div>
+
+    <!-- Confirmation area for low-literacy users -->
+    <div id="voice-confirm" style="display:none;border:1px solid #ddd;padding:0.6rem;margin-bottom:1rem;background:#f9f9f9;">
+        <div id="voice-final" style="font-size:1.25rem;font-weight:700;margin-bottom:0.5rem;">-</div>
+        <div style="margin-bottom:0.5rem;">Is this correct?</div>
+        <button id="confirm-btn" type="button" style="padding:0.5rem 0.8rem;margin-right:0.5rem;font-size:1rem;">✅ Confirm</button>
+        <button id="retry-btn" type="button" style="padding:0.5rem 0.8rem;font-size:1rem;">🔁 Retry</button>
+    </div>
+    <style>
+        .grid { display:grid; grid-template-columns: repeat(auto-fill,minmax(220px,1fr)); gap:16px; }
+        .card { border:1px solid #eee; border-radius:8px; overflow:hidden; background:#fff; box-shadow:0 6px 18px rgba(0,0,0,0.05); }
+        .card img { width:100%; height:180px; object-fit:cover; display:block; background:#f6f6f6; }
+        .card .body { padding:12px; }
+        .card .title { font-weight:700; font-size:1.05rem; margin-bottom:6px; }
+        .card .meta { color:#666; margin-bottom:8px; }
+        .card .actions { display:flex; gap:8px; align-items:center; }
+        .card input[type=number] { width:80px; padding:6px;border:1px solid #ddd;border-radius:4px; }
+        .card button { padding:8px 10px;background:#4caf50;color:#fff;border:none;border-radius:6px;cursor:pointer; }
+    </style>
+
+    <div class="grid">
+        {% for crop in crops %}
+        <div class="card" aria-label="{{ crop.name }}">
+            <img src="{{ crop.image }}" alt="{{ crop.name }} image" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='/static/images/crops/millet.svg';">
+            <div class="body">
+                <div class="title">{{ crop.name }}</div>
+                <div class="meta">Available: {{ crop.quantity }} kg • ₹{{ crop.price }}/kg</div>
+                <div class="actions">
+                    <form action="/customer/order/{{ crop.id }}" method="post" style="display:flex;gap:8px;align-items:center;">
+                        <input type="hidden" name="sid" value="{{ sid }}">
+                        <input aria-label="Quantity for {{ crop.name }}" type="number" name="quantity" min="1" max="{{ crop.quantity }}" value="1" required>
+                        <button type="submit">Order</button>
+                    </form>
+                    <button type="button" class="view-farmer-btn" data-farmer-id="{{ crop.farmer_id }}" style="margin-left:auto;color:#2196F3;background:none;border:none;padding:0;font-weight:700;cursor:pointer;">View Farmer</button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <a href="/">Logout</a>
+
+    <!-- Farmer modal (populated via fetch) -->
+    <div id="farmer-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;padding:20px;z-index:1000;">
+        <div style="max-width:520px;width:100%;background:#fff;border-radius:8px;overflow:hidden;position:relative;padding:18px;">
+            <button id="farmer-modal-close" style="position:absolute;right:10px;top:10px;border:none;background:#fff;border-radius:50%;width:36px;height:36px;font-weight:700;cursor:pointer;">✕</button>
+            <h3 id="farmer-modal-name" style="margin:0 0 6px 0;"></h3>
+            <div id="farmer-modal-location" style="color:#666;margin-bottom:8px;"></div>
+            <div style="margin-bottom:10px;">
+                <div style="background:#f0f0f0;border-radius:8px;overflow:hidden;height:14px;position:relative;">
+                    <div id="farmer-modal-fill" style="height:100%;width:0%;background:linear-gradient(90deg,#4CAF50,#2e7d32);transition:width:350ms ease;"></div>
+                </div>
+                <div id="farmer-modal-score" style="margin-top:8px;color:#333;font-weight:700;"></div>
+                <div id="farmer-modal-deliveries" style="margin-top:6px;color:#555;font-size:0.95rem;"></div>
+            </div>
+            <div style="margin-top:12px;"><a id="farmer-modal-full" href="#" style="color:#2196F3;text-decoration:none;">Open full profile</a></div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+      const voiceBtn = document.getElementById('voice-btn');
+      const searchInput = document.getElementById('search-input');
+      const voiceStatus = document.getElementById('voice-status');
+      const voiceLang = document.getElementById('voice-lang');
+      const voiceConfirm = document.getElementById('voice-confirm');
+      const voiceFinal = document.getElementById('voice-final');
+      const confirmBtn = document.getElementById('confirm-btn');
+      const retryBtn = document.getElementById('retry-btn');
+
+      let recognition;
+      let recognizing = false;
+      if (!voiceBtn || !searchInput) return;
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.lang = voiceLang.value || 'en-IN';
+        recognition.interimResults = true;
+        recognition.maxAlternatives = 1;
+
+        // update recognition language when selector changes
+        voiceLang.addEventListener('change', function() {
+          if (recognition && !recognizing) {
+            recognition.lang = voiceLang.value;
+            localStorage.setItem('preferredVoiceLang', voiceLang.value);
+          }
+        });
+
+        // restore preference
+        const savedLang = localStorage.getItem('preferredVoiceLang');
+        if (savedLang) {
+          voiceLang.value = savedLang;
+          recognition.lang = savedLang;
+        }
+
+        recognition.onstart = function() {
+          recognizing = true;
+          voiceBtn.classList.add('listening');
+          voiceStatus.textContent = 'Listening...';
+          voiceConfirm.style.display = 'none';
+          voiceFinal.textContent = '-';
+        };
+
+        recognition.onresult = function(event) {
+          let interim = '';
+          let final = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              final += transcript;
+            } else {
+              interim += transcript;
+            }
+          }
+          // show interim text while listening
+          voiceStatus.textContent = interim || final || 'Listening...';
+          // put final in confirm area when final recognized
+          if (final) {
+            searchInput.value = final;
+            voiceFinal.textContent = final;
+            voiceConfirm.style.display = 'block';
+            // speak back the recognized text for confirmation
+            try {
+              const msg = new SpeechSynthesisUtterance('You said: ' + final);
+              // try to set voice language to match selected if possible
+              msg.lang = voiceLang.value || 'en-IN';
+              window.speechSynthesis.cancel();
+              window.speechSynthesis.speak(msg);
+            } catch (e) {
+              // ignore if speechSynthesis unsupported
+            }
+          }
+        };
+
+        recognition.onend = function() {
+          recognizing = false;
+          voiceBtn.classList.remove('listening');
+          if (!voiceConfirm.style.display || voiceConfirm.style.display === 'none') {
+            voiceStatus.textContent = '';
+          }
+        };
+
+        recognition.onerror = function(event) {
+          voiceStatus.textContent = 'Voice recognition error: ' + (event.error || 'unknown');
+        };
+
+        voiceBtn.addEventListener('click', function() {
+          if (recognizing) {
+            recognition.stop();
+          } else {
+            try {
+              recognition.lang = voiceLang.value || recognition.lang;
+              recognition.start();
+            } catch (e) {
+              console.warn('Recognition start error:', e);
+            }
+          }
+        });
+
+        // confirmation button submits form
+        confirmBtn.addEventListener('click', function() {
+          document.getElementById('search-form').submit();
+        });
+
+        retryBtn.addEventListener('click', function() {
+          voiceConfirm.style.display = 'none';
+          voiceFinal.textContent = '-';
+          searchInput.value = '';
+          // restart recognition
+          try {
+            recognition.start();
+          } catch (e) {
+            console.warn('Recognition restart error:', e);
+          }
+        });
+
+      } else {
+        voiceBtn.disabled = true;
+        voiceStatus.textContent = 'Voice search not supported in this browser. Try Chrome on Android or Desktop.';
+      }
+
+      // View Farmer modal behavior
+      function showFarmerModal(data){
+        document.getElementById('farmer-modal-name').textContent = data.name || 'Unknown';
+        document.getElementById('farmer-modal-location').textContent = data.location ? ('Location: ' + data.location) : '';
+        document.getElementById('farmer-modal-fill').style.width = (data.trust_score || 0) + '%';
+        document.getElementById('farmer-modal-score').textContent = (data.trust_score || 0) + '% • ' + (data.trust_label || 'Medium');
+        if (data.total_orders && data.total_orders > 0) document.getElementById('farmer-modal-deliveries').textContent = data.delivered_count + ' / ' + data.total_orders + ' deliveries completed'; else document.getElementById('farmer-modal-deliveries').textContent = 'No deliveries yet';
+        document.getElementById('farmer-modal-full').href = '/customer/farmer_profile/' + (data.id || '') + '?sid={{ sid }}';
+        document.getElementById('farmer-modal').style.display = 'flex'; document.body.style.overflow = 'hidden';
+      }
+      function hideFarmerModal(){ document.getElementById('farmer-modal').style.display = 'none'; document.body.style.overflow = 'auto'; }
+      document.getElementById('farmer-modal-close').addEventListener('click', hideFarmerModal);
+      document.getElementById('farmer-modal').addEventListener('click', function(e){ if (e.target === this) hideFarmerModal(); });
+
+      document.querySelectorAll('.view-farmer-btn').forEach(btn => {
+        btn.addEventListener('click', function(){
+          const fid = this.dataset.farmerId;
+          if (!fid) return;
+          fetch('/farmer/summary/' + fid + '?sid={{ sid }}')
+            .then(r => r.json().then(j => ({status: r.status, body: j})))
+            .then(obj => {
+              if (obj.status === 200 && obj.body && !obj.body.error){
+                showFarmerModal(obj.body);
+              } else if (obj.body && obj.body.error === 'login_required'){
+                // show a small notice and direct user to login as customer
+                if (confirm('Please log in as a customer to view farmer details. Go to login page?')) window.location = '/login';
+              } else {
+                alert('Could not load farmer details');
+              }
+            }).catch(err => { console.error(err); alert('Failed to fetch farmer information'); });
+        });
+      });
+
+    })();
+    </script>
+</body>
+</html>

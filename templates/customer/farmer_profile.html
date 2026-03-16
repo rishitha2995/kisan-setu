@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Farmer Profile</title>
+</head>
+<body>
+    <h1>👨‍🌾 Farmer Profile: {{ farmer.name }}</h1>
+    <p>Location: {{ farmer.location }}</p>
+
+    <div style="max-width:720px;margin-top:12px;border:1px solid #eee;padding:12px;border-radius:8px;background:#fff;">
+        <div style="font-weight:700;margin-bottom:6px;">Trust Score</div>
+        <div style="background:#f0f0f0;border-radius:8px;overflow:hidden;height:18px;position:relative;">
+            <div id="trust-fill" style="height:100%;width:{{ trust_score }}%;background: {% if trust_label=='High' %}linear-gradient(90deg,#4CAF50,#2e7d32){% elif trust_label=='Medium' %}linear-gradient(90deg,#FFB74D,#e65100){% else %}linear-gradient(90deg,#EF5350,#c62828){% endif %};transition:width:400ms ease;"></div>
+        </div>
+        <div style="margin-top:8px;color:#555;">{{ trust_score }}% • <strong>{{ trust_label }}</strong>
+            {% if total_orders and total_orders > 0 %}
+                — {{ delivered_count }} / {{ total_orders }} deliveries completed
+            {% else %}
+                — No deliveries yet
+            {% endif %}
+        </div>
+
+        <div style="margin-top:12px;color:#333;">Total Sales: ₹{{ total_sales }} — Completion rate: {{ completion_rate }}%</div>
+    </div>
+
+    <h2 style="margin-top:18px;">Crops</h2>
+    <ul>
+        {% for crop in crops %}
+        <li>{{ crop.name }} - Harvest: {{ crop.harvest_date }}</li>
+        {% endfor %}
+    </ul>
+
+    <h2>Crop Lifecycle</h2>
+    <p>Harvest Date → Storage → Dispatch → Delivery</p>
+
+    <a href="/customer?sid={{ sid }}">Back</a>
+</body>
+</html>

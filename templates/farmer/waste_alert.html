@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Waste Alert</title>
+</head>
+<body>
+    <h1>🚨 Waste Alert</h1>
+    <form id="waste-form" action="/farmer/waste-alert" method="post">
+        <input type="hidden" name="sid" value="{{ sid }}">
+
+        <label for="waste-crop-input">Crop Type: </label>
+        <input id="waste-crop-input" type="text" name="crop_type" required style="font-size:1.1rem;padding:0.3rem;width:60%;">
+        <select id="waste-voice-lang" aria-label="Choose language for voice input" style="margin-left:0.4rem;padding:0.3rem;font-size:1rem;">
+            <option value="en-IN">English (India)</option>
+            <option value="hi-IN">Hindi</option>
+            <option value="kn-IN">Kannada</option>
+            <option value="ta-IN">Tamil</option>
+            <option value="te-IN">Telugu</option>
+        </select>
+        <button type="button" id="waste-crop-voice-btn" title="Speak crop type" style="font-size:1.2rem;margin-left:0.6rem;padding:0.3rem;border-radius:6px;">🎤</button>
+
+        <div id="waste-crop-status" aria-live="polite" style="min-height:1.2rem;color:#333;font-weight:bold;margin-top:0.3rem;"></div>
+        <div id="waste-crop-confirm" style="display:none;border:1px solid #ddd;padding:0.6rem;margin-top:0.3rem;background:#f9f9f9;width:70%;">
+            <div id="waste-crop-final" style="font-size:1.15rem;font-weight:700;margin-bottom:0.5rem;">-</div>
+            <div style="margin-bottom:0.5rem;">Is this correct?</div>
+            <button id="waste-crop-confirm-btn" type="button" style="padding:0.4rem 0.6rem;margin-right:0.5rem;font-size:1rem;">✅ Confirm</button>
+            <button id="waste-crop-retry-btn" type="button" style="padding:0.4rem 0.6rem;font-size:1rem;">🔁 Retry</button>
+        </div>
+
+        <br>
+        <label>Spoiled Quantity: <input id="waste-qty-input" type="number" name="quantity" required style="width:120px;"></label>
+        <button type="button" id="waste-qty-voice-btn" title="Speak quantity" style="font-size:1.1rem;margin-left:0.5rem;padding:0.3rem;border-radius:6px;">🔊</button>
+        <div id="waste-qty-status" aria-live="polite" style="min-height:1.2rem;color:#333;font-weight:bold;margin-top:0.25rem;"></div>
+        <div id="waste-qty-confirm" style="display:none;border:1px solid #ddd;padding:0.4rem;margin-top:0.25rem;background:#fff;width:30%;">
+            <div id="waste-qty-final" style="font-weight:700;"></div>
+            <div style="margin-top:0.25rem;">Is this correct?</div>
+            <button id="waste-qty-confirm-btn" type="button">✅ Confirm</button>
+            <button id="waste-qty-retry-btn" type="button">🔁 Retry</button>
+        </div>
+
+        <br>
+        <label>Period: 
+            <select id="waste-period-input" name="period">
+                <option value="today">Today</option>
+                <option value="this month">This Month</option>
+            </select>
+        </label>
+        <button type="button" id="waste-period-voice-btn" title="Speak period" style="font-size:1.1rem;margin-left:0.5rem;padding:0.3rem;border-radius:6px;">🔊</button>
+        <div id="waste-period-status" aria-live="polite" style="min-height:1.2rem;color:#333;font-weight:bold;margin-top:0.25rem;"></div>
+        <div id="waste-period-confirm" style="display:none;border:1px solid #ddd;padding:0.4rem;margin-top:0.25rem;background:#fff;width:30%;">
+            <div id="waste-period-final" style="font-weight:700;"></div>
+            <div style="margin-top:0.25rem;">Is this correct?</div>
+            <button id="waste-period-confirm-btn" type="button">✅ Confirm</button>
+            <button id="waste-period-retry-btn" type="button">🔁 Retry</button>
+        </div>
+
+        <br>
+        <button id="waste-report-btn" type="submit">Report</button>
+    </form>
+    <a href="/farmer?sid={{ sid }}">Back</a>
+
+    <script>
+    (function() {
+      const cropBtn = document.getElementById('waste-crop-voice-btn');
+      const cropInput = document.getElementById('waste-crop-input');
+      const cropStatus = document.getElementById('waste-crop-status');
+      const cropConfirm = document.getElementById('waste-crop-confirm');
+      const cropFinal = document.getElementById('waste-crop-final');
+      const cropConfirmBtn = document.getElementById('waste-crop-confirm-btn');
+      const cropRetryBtn = document.getElementById('waste-crop-retry-btn');
+
+      const qtyBtn = document.getElementById('waste-qty-voice-btn');
+      const qtyInput = document.getElementById('waste-qty-input');
+      const qtyStatus = document.getElementById('waste-qty-status');
+      const qtyConfirm = document.getElementById('waste-qty-confirm');
+      const qtyFinal = document.getElementById('waste-qty-final');
+      const qtyConfirmBtn = document.getElementById('waste-qty-confirm-btn');
+      const qtyRetryBtn = document.getElementById('waste-qty-retry-btn');
+
+      const periodBtn = document.getElementById('waste-period-voice-btn');
+      const periodInput = document.getElementById('waste-period-input');
+      const periodStatus = document.getElementById('waste-period-status');
+      const periodConfirm = document.getElementById('waste-period-confirm');
+      const periodFinal = document.getElementById('waste-period-final');
+      const periodConfirmBtn = document.getElementById('waste-period-confirm-btn');
+      const periodRetryBtn = document.getElementById('waste-period-retry-btn');
+
+      const lang = document.getElementById('waste-voice-lang');
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        if (cropBtn) cropBtn.disabled = true;
+        if (qtyBtn) qtyBtn.disabled = true;
+        if (periodBtn) periodBtn.disabled = true;
+        if (cropStatus) cropStatus.textContent = 'Voice not supported; use Chrome.';
+        return;
+      }
+
+      // helper wordsToNumber and parseNumeric copied from add_crop page
+      function wordsToNumber(s) {
+        const small = {zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16, seventeen:17, eighteen:18, nineteen:19};
+        const tens = {twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90};
+        const scales = {hundred:100, thousand:1000, lakh:100000, million:1000000};
+        s = s.replace(/-/g,' ').toLowerCase();
+        if (!s.match(/[a-z]/)) return null;
+        let parts = s.split(/\s+/);
+        let total = 0;
+        let current = 0;
+        for (let w of parts) {
+          if (small[w] !== undefined) { current += small[w]; }
+          else if (tens[w] !== undefined) { current += tens[w]; }
+          else if (w === 'and') { continue; }
+          else if (w === 'point' || w === 'dot' || w === 'decimal') {
+            const idx = parts.indexOf(w);
+            const intPart = parts.slice(0, idx).join(' ');
+            const decParts = parts.slice(idx+1);
+            let decStr = '';
+            for (let d of decParts) {
+              if (small[d] !== undefined) decStr += small[d].toString();
+              else if (!isNaN(parseInt(d))) decStr += String(parseInt(d));
+              else break;
+            }
+            const intNum = wordsToNumber(intPart) || 0;
+            const decNum = decStr ? parseFloat('0.' + decStr) : 0;
+            return intNum + decNum;
+          } else if (scales[w] !== undefined) { current = Math.max(1, current) * scales[w]; total += current; current = 0; }
+          else if (!isNaN(parseInt(w))) { current += parseInt(w); }
+        }
+        return total + current;
+      }
+      function parseNumeric(transcript) {
+        if (!transcript) return null;
+        let t = transcript.toLowerCase();
+        t = t.replace(/(rupees|rs\.?|rs\b|rupee|kilos|kilograms|kilogram|kgs|kg|rupees)/g, ' ');
+        const m = t.match(/[-+]?[0-9]*\.?[0-9]+/);
+        if (m) return parseFloat(m[0]);
+        const wn = wordsToNumber(t);
+        if (wn !== null && !isNaN(wn)) return wn;
+        return null;
+      }
+
+      // Create a recognizer instance on each click to avoid "already started" errors
+      function createRecognizer(btn, onFinal) {
+        if (!btn) return;
+        const saved = localStorage.getItem('preferredVoiceLang');
+        if (saved) { lang.value = saved; }
+        lang.addEventListener('change', function() { localStorage.setItem('preferredVoiceLang', lang.value); });
+
+        btn.addEventListener('click', function() {
+          try {
+            const rec = new SpeechRecognition();
+            rec.lang = lang.value || 'en-IN';
+            rec.interimResults = true;
+            rec.maxAlternatives = 1;
+
+            if (btn === cropBtn) { cropStatus.textContent = 'Listening...'; cropConfirm.style.display='none'; }
+            if (btn === qtyBtn) { qtyStatus.textContent = 'Listening...'; qtyConfirm.style.display='none'; }
+            if (btn === periodBtn) { periodStatus.textContent = 'Listening...'; periodConfirm.style.display='none'; }
+
+            rec.onresult = function(event) {
+              let interim=''; let final='';
+              for (let i = event.resultIndex; i < event.results.length; ++i) {
+                const transcript = event.results[i][0].transcript;
+                if (event.results[i].isFinal) final += transcript; else interim += transcript;
+              }
+              if (btn === cropBtn) { cropStatus.textContent = interim || final || 'Listening...'; }
+              if (btn === qtyBtn) { qtyStatus.textContent = interim || final || 'Listening...'; }
+              if (btn === periodBtn) { periodStatus.textContent = interim || final || 'Listening...'; }
+              if (final) onFinal(final.trim());
+            };
+
+            rec.onend = function() {
+              if (btn === cropBtn && !cropConfirm.style.display) cropStatus.textContent = '';
+              if (btn === qtyBtn && !qtyConfirm.style.display) qtyStatus.textContent = '';
+              if (btn === periodBtn && !periodConfirm.style.display) periodStatus.textContent = '';
+            };
+
+            rec.onerror = function(e) { if (btn === cropBtn) cropStatus.textContent = 'Error: ' + (e.error||'unknown'); };
+            rec.start();
+          } catch(e) {
+            console.warn('Start error', e);
+            if (btn === cropBtn) cropStatus.textContent = 'Could not start voice input.';
+          }
+        });
+      }
+
+      // Handlers for final transcripts
+      createRecognizer(cropBtn, function(final) {
+        cropInput.value = final;
+        cropFinal.textContent = final;
+        cropConfirm.style.display = 'block';
+        try { const m = new SpeechSynthesisUtterance('You said: ' + final); m.lang = lang.value || 'en-IN'; window.speechSynthesis.cancel(); window.speechSynthesis.speak(m); } catch (e) {}
+      });
+
+      createRecognizer(qtyBtn, function(final) {
+        const n = parseNumeric(final);
+        if (n !== null) { qtyInput.value = Math.round(n); qtyFinal.textContent = qtyInput.value; qtyConfirm.style.display = 'block'; try { const m = new SpeechSynthesisUtterance('Recognized ' + qtyInput.value); m.lang = lang.value || 'en-IN'; window.speechSynthesis.cancel(); window.speechSynthesis.speak(m); } catch(e) {} } else { qtyStatus.textContent = 'Could not parse number'; }
+      });
+
+      createRecognizer(periodBtn, function(final) {
+        // normalize certain words to the select options
+        const f = final.toLowerCase();
+        if (f.includes('today')) { periodInput.value = 'today'; periodFinal.textContent = 'Today'; periodConfirm.style.display = 'block'; }
+        else if (f.includes('month')) { periodInput.value = 'this month'; periodFinal.textContent = 'This Month'; periodConfirm.style.display = 'block'; }
+        else { periodStatus.textContent = 'Could not determine period, please choose manually.'; }
+      });
+
+      cropConfirmBtn.addEventListener('click', function() { cropConfirm.style.display='none'; });
+      cropRetryBtn.addEventListener('click', function() { cropConfirm.style.display='none'; cropFinal.textContent='-'; cropInput.value=''; try { cropBtn.click(); } catch(e){} });
+
+      qtyConfirmBtn.addEventListener('click', function() { qtyConfirm.style.display='none'; });
+      qtyRetryBtn.addEventListener('click', function() { qtyConfirm.style.display='none'; qtyFinal.textContent=''; qtyInput.value=''; try { qtyBtn.click(); } catch(e){} });
+
+      periodConfirmBtn.addEventListener('click', function() { periodConfirm.style.display='none'; });
+      periodRetryBtn.addEventListener('click', function() { periodConfirm.style.display='none'; periodFinal.textContent=''; try { periodBtn.click(); } catch(e){} });
+    })();
+    </script>
+</body>
+</html>

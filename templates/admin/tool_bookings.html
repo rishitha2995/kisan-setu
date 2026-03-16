@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Tool Bookings</title>
+  <style>
+    body{font-family:Arial, sans-serif; padding:20px;}
+    .booking{border:1px solid #ddd;padding:10px;margin:10px 0;border-radius:6px;background:#f8f8f8}
+    .actions form{display:inline}
+  </style>
+</head>
+<body>
+  <h1>🧾 Tool / Officer Bookings</h1>
+  <a href="/">Home</a>
+  {% if bookings %}
+    {% for b in bookings %}
+      <div class="booking">
+        <div><strong>#{{ b.id }}</strong> — Farmer ID: {{ b.farmer_id }} — <em>{{ b.created_at }}</em></div>
+        <div><strong>Tool/Service:</strong> {{ b.tool_or_service }}</div>
+        <div><strong>Date:</strong> {{ b.date or '-' }}</div>
+        <div><strong>Quantity:</strong> {{ b.quantity }}</div>
+        <div><strong>Notes:</strong> {{ b.notes or '-' }}</div>
+        <div><strong>Status:</strong> {{ b.status }}</div>
+        <div class="actions">
+          <form method="post" action="/admin/tool-bookings/{{ b.id }}/update">
+            <input type="hidden" name="sid" value="{{ sid }}">
+            <select name="status">
+              <option value="pending" {% if b.status == 'pending' %}selected{% endif %}>pending</option>
+              <option value="confirmed" {% if b.status == 'confirmed' %}selected{% endif %}>confirmed</option>
+              <option value="completed" {% if b.status == 'completed' %}selected{% endif %}>completed</option>
+              <option value="cancelled" {% if b.status == 'cancelled' %}selected{% endif %}>cancelled</option>
+            </select>
+            <button type="submit">Update</button>
+          </form>
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p>No bookings yet.</p>
+  {% endif %}
+</body>
+</html>

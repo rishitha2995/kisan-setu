@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Book Tool / Officer</title>
+</head>
+<body>
+    <h1>📅 Book Tool / Officer</h1>
+    <form id="book-form" action="/farmer/book-tool" method="post">
+        <input type="hidden" name="sid" value="{{ sid }}">
+
+        <label>Tool / Service: </label>
+        <input id="tool-input" type="text" name="tool_or_service" required style="font-size:1.1rem;padding:0.3rem;width:60%;">
+        <input type="hidden" id="listing-id" name="listing_id">
+        {% if selected_listing %}
+        <div style="margin-top:0.6rem;padding:0.6rem;border:1px solid #ddd;background:#fff;border-radius:6px;">
+            <strong>Suggested Dealer:</strong> {{ selected_listing.seller_name }} — <strong>{{ selected_listing.name }}</strong> — ₹{{ selected_listing.price }} — available: {{ selected_listing.available }}
+            <div style="margin-top:0.5rem;"><button type="button" id="use-selected">Use this listing</button></div>
+        </div>
+        {% endif %}
+        <select id="book-voice-lang" aria-label="Choose language for voice input" style="margin-left:0.4rem;padding:0.3rem;font-size:1rem;">
+            <option value="en-IN">English (India)</option>
+            <option value="hi-IN">Hindi</option>
+            <option value="kn-IN">Kannada</option>
+            <option value="ta-IN">Tamil</option>
+            <option value="te-IN">Telugu</option>
+        </select>
+        <button type="button" id="tool-voice-btn" title="Speak tool or officer" style="font-size:1.2rem;margin-left:0.6rem;padding:0.3rem;border-radius:6px;">🎤</button>
+        <div id="tool-status" aria-live="polite" style="min-height:1.2rem;font-weight:bold;margin-top:0.4rem;"></div>
+        <div id="tool-confirm" style="display:none;border:1px solid #ddd;padding:0.6rem;margin-top:0.3rem;background:#f9f9f9;width:70%;">
+            <div id="tool-final" style="font-size:1.15rem;font-weight:700;margin-bottom:0.5rem;">-</div>
+            <div style="margin-bottom:0.5rem;">Is this correct?</div>
+            <button id="tool-confirm-btn" type="button">✅ Confirm</button>
+            <button id="tool-retry-btn" type="button">🔁 Retry</button>
+        </div>
+
+        <!-- Search marketplace results for tool listings -->
+        <div style="margin-top:0.6rem;">
+            <label for="tool-search">Search listings:</label>
+            <input id="tool-search" type="text" placeholder="Type tool name and click Search" style="width:50%;padding:0.3rem;margin-left:0.4rem;">
+            <button type="button" id="tool-search-btn">Search</button>
+            <button type="button" id="tool-search-voice-btn" title="Speak search query" style="font-size:1.1rem;margin-left:0.4rem;padding:0.3rem;border-radius:6px;">🎤</button>
+            <div id="search-results" style="margin-top:0.5rem;"></div>
+            <div style="margin-top:0.5rem;">
+                <button type="button" id="tool-voice-select-btn" title="Voice select from results" style="font-size:1.0rem;padding:0.3rem;border-radius:6px;">🗣️ Say 'select 1' to choose</button>
+                <div id="search-instructions" style="display:inline-block;margin-left:0.6rem;color:#555;font-size:0.95rem;"></div>
+            </div>
+        </div>
+
+        <br>
+        <label>Date: <input id="book-date" type="date" name="date"></label>
+        <button type="button" id="date-voice-btn" title="Speak date" style="font-size:1.1rem;margin-left:0.5rem;padding:0.3rem;border-radius:6px;">🔊</button>
+        <div id="date-status" aria-live="polite" style="min-height:1.2rem;color:#333;font-weight:bold;margin-top:0.25rem;"></div>
+
+        <br>
+        <label>Quantity (units): <input id="book-qty" type="number" name="quantity" value="1" style="width:120px;"></label>
+        <button type="button" id="qty-voice-btn" title="Speak quantity" style="font-size:1.1rem;margin-left:0.5rem;padding:0.3rem;border-radius:6px;">🔊</button>
+        <div id="qty-status" aria-live="polite" style="min-height:1.2rem;color:#333;font-weight:bold;margin-top:0.25rem;"></div>
+
+        <br>
+        <label>Notes:</label><br>
+        <textarea id="notes-input" name="notes" rows="3" cols="60" style="font-size:1rem;padding:0.4rem;"></textarea>
+        <button type="button" id="notes-voice-btn" title="Speak notes" style="font-size:1.1rem;margin-left:0.5rem;padding:0.3rem;border-radius:6px;">🔊</button>
+        <div id="notes-status" aria-live="polite" style="min-height:1.2rem;color:#333;font-weight:bold;margin-top:0.25rem;"></div>
+
+        <br><br>
+        <button type="submit">Request Booking</button>
+    </form>
+    <a href="/farmer?sid={{ sid }}">Back</a>
+
+<script>
+(function() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  // track active recognizers so we can stop them when leaving the page
+  const activeRecognizers = [];
+  function stopAllRecognizers(){
+    try{
+      activeRecognizers.forEach(r=>{
+        try{ if (typeof r.abort === 'function') r.abort(); if (typeof r.stop === 'function') r.stop(); }catch(e){}
+      });
+      activeRecognizers.length = 0;
+    }catch(e){}
+    try{ if (window.speechSynthesis && window.speechSynthesis.cancel) window.speechSynthesis.cancel(); }catch(e){}
+  }
+  window.addEventListener('beforeunload', stopAllRecognizers);
+  document.addEventListener('visibilitychange', function(){ if (document.hidden) stopAllRecognizers(); });
+
+  const toolBtn = document.getElementById('tool-voice-btn');
+  const toolInput = document.getElementById('tool-input');
+  const toolStatus = document.getElementById('tool-status');
+  const toolConfirm = document.getElementById('tool-confirm');
+  const toolFinal = document.getElementById('tool-final');
+  const toolConfirmBtn = document.getElementById('tool-confirm-btn');
+  const toolRetryBtn = document.getElementById('tool-retry-btn');
+
+  const dateBtn = document.getElementById('date-voice-btn');
+  const dateInput = document.getElementById('book-date');
+  const dateStatus = document.getElementById('date-status');
+
+  const qtyBtn = document.getElementById('qty-voice-btn');
+  const qtyInput = document.getElementById('book-qty');
+  const qtyStatus = document.getElementById('qty-status');
+
+  const notesBtn = document.getElementById('notes-voice-btn');
+  const notesInput = document.getElementById('notes-input');
+  const notesStatus = document.getElementById('notes-status');
+
+  const lang = document.getElementById('book-voice-lang');
+
+  function wordsToNumber(s) {
+    const small = {zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16, seventeen:17, eighteen:18, nineteen:19};
+    const tens = {twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90};
+    const scales = {hundred:100, thousand:1000, lakh:100000, million:1000000};
+    s = s.replace(/-/g,' ').toLowerCase();
+    if (!s.match(/[a-z]/)) return null;
+    let parts = s.split(/\s+/);
+    let total = 0; let current = 0;
+    for (let w of parts) {
+      if (small[w] !== undefined) current += small[w];
+      else if (tens[w] !== undefined) current += tens[w];
+      else if (w === 'and') continue;
+      else if (w === 'point' || w === 'dot' || w === 'decimal') {
+        const idx = parts.indexOf(w);
+        const intPart = parts.slice(0, idx).join(' ');
+        const decParts = parts.slice(idx+1);
+        let decStr = '';
+        for (let d of decParts) { if (small[d] !== undefined) decStr += small[d].toString(); else if (!isNaN(parseInt(d))) decStr += String(parseInt(d)); else break; }
+        const intNum = wordsToNumber(intPart) || 0;
+        const decNum = decStr ? parseFloat('0.' + decStr) : 0; return intNum + decNum;
+      } else if (scales[w] !== undefined) { current = Math.max(1, current) * scales[w]; total += current; current = 0; }
+      else if (!isNaN(parseInt(w))) current += parseInt(w);
+    }
+    return total + current;
+  }
+
+  function parseNumeric(transcript) {
+    if (!transcript) return null;
+    let t = transcript.toLowerCase();
+    const m = t.match(/[-+]?[0-9]*\.?[0-9]+/);
+    if (m) return parseFloat(m[0]);
+    const wn = wordsToNumber(t);
+    if (wn !== null && !isNaN(wn)) return wn;
+    return null;
+  }
+
+  function createRecognizer(btn, onFinal, statusEl) {
+    if (!btn || !SpeechRecognition) { if (btn) btn.disabled = true; if (statusEl) statusEl.textContent = 'Voice not supported; use Chrome.'; return null; }
+    const rec = new SpeechRecognition(); rec.lang = lang.value || 'en-IN'; rec.interimResults = true; rec.maxAlternatives = 1;
+    activeRecognizers.push(rec);
+    const saved = localStorage.getItem('preferredVoiceLang'); if (saved) { lang.value = saved; rec.lang = saved; }
+    lang.addEventListener('change', function(){ rec.lang = lang.value; localStorage.setItem('preferredVoiceLang', lang.value); });
+
+    rec.onstart = function(){ if (statusEl) statusEl.textContent = 'Listening...'; };
+    rec.onresult = function(event){ let interim=''; let final=''; for (let i=event.resultIndex;i<event.results.length;++i){ const t = event.results[i][0].transcript; if (event.results[i].isFinal) final += t; else interim += t; } if (statusEl) statusEl.textContent = interim || final || 'Listening...'; if (final) onFinal(final); };
+    rec.onerror = function(e){ if (statusEl) statusEl.textContent = 'Error: ' + (e.error||'unknown'); };
+    rec.onend = function(){ try{ if (statusEl) statusEl.textContent = ''; }catch(e){}; const idx = activeRecognizers.indexOf(rec); if (idx !== -1) activeRecognizers.splice(idx,1); };
+    btn.addEventListener('click', function(){ try { rec.lang = lang.value || rec.lang; rec.start(); } catch(e){ console.warn('Start error', e); } });
+    return rec;
+  }
+
+  createRecognizer(toolBtn, function(final){ toolInput.value = final; toolFinal.textContent = final; toolConfirm.style.display='block'; try{ const m = new SpeechSynthesisUtterance('You said: ' + final); m.lang = lang.value || 'en-IN'; window.speechSynthesis.cancel(); window.speechSynthesis.speak(m); }catch(e){} }, toolStatus);
+
+  // If a listing was preselected, offer to use it
+  const useSelectedBtn = document.getElementById('use-selected');
+  if (useSelectedBtn) {
+    useSelectedBtn.addEventListener('click', function(){
+      const sel = {{ (selected_listing | tojson) if selected_listing else 'null' }};
+      if (sel) {
+        document.getElementById('tool-input').value = sel.name;
+        document.getElementById('listing-id').value = sel.id;
+        document.getElementById('tool-status').textContent = 'Selected: ' + sel.seller_name + ' — ₹' + sel.price + ' (available: ' + sel.available + ')';
+      }
+    });
+  }
+
+
+  // Marketplace search: call /tools/search?q= and show results
+  let lastSearchItems = [];
+  function readResults(items) {
+    try {
+      const synth = window.speechSynthesis;
+      if (!synth) return;
+      let speech = '';
+      speech += 'Found ' + items.length + ' listings. ';
+      for (let i = 0; i < items.length; ++i) {
+        const it = items[i];
+        speech += 'Result ' + (i+1) + ': ' + it.name + ' from ' + it.seller_name + ', price ' + it.price + ' rupees, available ' + it.available + '. ';
+      }
+      speech += 'To select, say select followed by the number, for example: select 1.';
+      const msg = new SpeechSynthesisUtterance(speech);
+      msg.lang = lang.value || 'en-IN';
+      synth.cancel();
+      synth.speak(msg);
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  function renderSearchResults(items) {
+    lastSearchItems = items;
+    const results = document.getElementById('search-results');
+    if (!items || items.length === 0) {
+      results.innerHTML = '<div>No listings found.</div>';
+      return;
+    }
+    // create responsive card grid
+    const grid = document.createElement('div');
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(220px, 1fr))';
+    grid.style.gap = '12px';
+    for (let idx = 0; idx < items.length; idx++) {
+      const it = items[idx];
+      const card = document.createElement('div');
+      card.style.border = '1px solid #ddd';
+      card.style.borderRadius = '8px';
+      card.style.overflow = 'hidden';
+      card.style.background = '#fff';
+      card.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)';
+      card.style.padding = '0.6rem';
+      card.style.display = 'flex';
+      card.style.flexDirection = 'column';
+      card.style.justifyContent = 'space-between';
+
+      const img = document.createElement('img');
+      img.src = it.image || '/static/images/tools/soil_tester.svg';
+      img.alt = it.name;
+      img.style.width = '100%';
+      img.style.height = '140px';
+      img.style.objectFit = 'cover';
+      img.loading = 'lazy';
+      img.onerror = function(){ this.src='/static/images/tools/soil_tester.svg'; };
+
+      const info = document.createElement('div');
+      info.style.padding = '0.4rem 0';
+      info.innerHTML = '<div style="font-weight:700;margin-bottom:0.25rem;">' + it.name + '</div>' +
+                       '<div style="color:#666;margin-bottom:0.25rem;">' + it.seller_name + '</div>' +
+                       '<div style="font-size:0.95rem;margin-bottom:0.25rem;">₹' + it.price + ' — available: ' + it.available + '</div>';
+
+      const actions = document.createElement('div');
+      actions.style.display = 'flex';
+      actions.style.justifyContent = 'space-between';
+      const selectBtn = document.createElement('button');
+      selectBtn.type = 'button';
+      selectBtn.textContent = 'Select';
+      selectBtn.style.padding = '0.4rem 0.6rem';
+      selectBtn.style.borderRadius = '6px';
+      selectBtn.style.border = '1px solid #2b7';
+      selectBtn.style.background = '#2b7';
+      selectBtn.style.color = '#fff';
+      selectBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        document.getElementById('tool-input').value = it.name;
+        document.getElementById('listing-id').value = it.id;
+        document.getElementById('tool-status').textContent = 'Selected: ' + it.seller_name + ' — ₹' + it.price + ' (available: ' + it.available + ')';
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+
+      const viewBtn = document.createElement('button');
+      viewBtn.type = 'button';
+      viewBtn.textContent = 'Details';
+      viewBtn.style.padding = '0.4rem 0.6rem';
+      viewBtn.style.borderRadius = '6px';
+      viewBtn.style.border = '1px solid #ccc';
+      viewBtn.style.background = '#fff';
+      viewBtn.addEventListener('click', function(){ alert(it.name + '\n\nSeller: ' + it.seller_name + '\nPrice: ₹' + it.price + '\nAvailable: ' + it.available); });
+
+      actions.appendChild(selectBtn);
+      actions.appendChild(viewBtn);
+
+      card.appendChild(img);
+      card.appendChild(info);
+      card.appendChild(actions);
+      grid.appendChild(card);
+    }
+    results.innerHTML = '';
+    results.appendChild(grid);
+    document.getElementById('search-instructions').textContent = 'You can say "select 1" after listening.';
+    readResults(items);
+  }
+
+  // load marketplace (all listings) on page load
+  function loadMarketplace() {
+    fetch('/tools/search')
+      .then(r => r.json())
+      .then(items => { renderSearchResults(items); })
+      .catch(err => { document.getElementById('search-results').innerHTML = '<div>Error loading marketplace</div>'; });
+  }
+  document.addEventListener('DOMContentLoaded', function(){ loadMarketplace(); });
+
+  document.getElementById('tool-search-btn').addEventListener('click', function() {
+    const q = document.getElementById('tool-search').value.trim();
+    const results = document.getElementById('search-results');
+    results.innerHTML = 'Searching...';
+    fetch('/tools/search?q=' + encodeURIComponent(q))
+      .then(r => r.json())
+      .then(items => { renderSearchResults(items); })
+      .catch(err => { results.innerHTML = '<div>Error searching listings</div>'; console.error(err); });
+  });
+
+  // Voice search: recognize query and run search
+  const toolSearchVoiceBtn = document.getElementById('tool-search-voice-btn');
+  if (toolSearchVoiceBtn && SpeechRecognition) {
+    const searchRec = new SpeechRecognition(); activeRecognizers.push(searchRec); searchRec.lang = lang.value || 'en-IN'; searchRec.interimResults = false; searchRec.maxAlternatives = 1;
+    const savedLang = localStorage.getItem('preferredVoiceLang'); if (savedLang) { lang.value = savedLang; searchRec.lang = savedLang; }
+    searchRec.onstart = function() { document.getElementById('search-instructions').textContent = 'Listening for search query...'; };
+    searchRec.onresult = function(e) { const t = e.results[0][0].transcript; document.getElementById('tool-search').value = t; document.getElementById('tool-search-btn').click(); };
+    searchRec.onerror = function(e) { document.getElementById('search-instructions').textContent = 'Search voice error'; };
+    toolSearchVoiceBtn.addEventListener('click', function(){ try { searchRec.lang = lang.value || searchRec.lang; searchRec.start(); } catch(e){ console.warn(e); } });
+  }
+
+  // Voice selection: listen for 'select N' or the number
+  const voiceSelectBtn = document.getElementById('tool-voice-select-btn');
+  if (voiceSelectBtn && SpeechRecognition) {
+    const selectRec = new SpeechRecognition(); activeRecognizers.push(selectRec); selectRec.lang = lang.value || 'en-IN'; selectRec.interimResults = false; selectRec.maxAlternatives = 1;
+    const savedLang2 = localStorage.getItem('preferredVoiceLang'); if (savedLang2) { selectRec.lang = savedLang2; }
+    selectRec.onstart = function() { document.getElementById('search-instructions').textContent = 'Listening for selection... Say select 1'; };
+    selectRec.onresult = function(e) {
+      const t = e.results[0][0].transcript.toLowerCase();
+      // extract a number from the phrase
+      let n = null;
+      const numMatch = t.match(/(select|choose|pick)\s+(\d+)/);
+      if (numMatch) n = parseInt(numMatch[2]);
+      else {
+        // try words -> number
+        try { n = Math.round(wordsToNumber(t)); } catch (e) { n = null; }
+      }
+      if (n && lastSearchItems && n >=1 && n <= lastSearchItems.length) {
+        // trigger select of (n-1)
+        const btn = document.querySelector('#search-results button[data-idx="' + (n-1) + '"]');
+        if (btn) { btn.click(); try { const msg = new SpeechSynthesisUtterance('Selected item ' + n); msg.lang = lang.value || 'en-IN'; window.speechSynthesis.cancel(); window.speechSynthesis.speak(msg);}catch(e){} }
+      } else {
+        try { const msg = new SpeechSynthesisUtterance('Could not parse selection, please try again'); msg.lang = lang.value || 'en-IN'; window.speechSynthesis.cancel(); window.speechSynthesis.speak(msg);}catch(e){}
+      }
+      document.getElementById('search-instructions').textContent = '';
+    };
+    selectRec.onerror = function(e) { document.getElementById('search-instructions').textContent = 'Selection voice error'; };
+    voiceSelectBtn.addEventListener('click', function() { try { selectRec.lang = lang.value || selectRec.lang; selectRec.start(); } catch(e){ console.warn(e); } });
+  }
+
+  createRecognizer(qtyBtn, function(final){ const n = parseNumeric(final); if (n !== null){ qtyInput.value = Math.round(n); qtyStatus.textContent = ''; try{ const m = new SpeechSynthesisUtterance('Recognized ' + qtyInput.value); m.lang = lang.value || 'en-IN'; window.speechSynthesis.cancel(); window.speechSynthesis.speak(m);}catch(e){} } else { qtyStatus.textContent = 'Could not parse number'; } }, qtyStatus);
+
+  createRecognizer(notesBtn, function(final){ notesInput.value = final; notesStatus.textContent = ''; try{ const m = new SpeechSynthesisUtterance('Notes recorded'); m.lang = lang.value || 'en-IN'; window.speechSynthesis.cancel(); window.speechSynthesis.speak(m);}catch(e){} }, notesStatus);
+
+  createRecognizer(dateBtn, function(final){ const f = final.toLowerCase(); const today = new Date(); if (f.includes('today')){ dateInput.value = today.toISOString().slice(0,10); dateStatus.textContent = 'Date set to today'; } else if (f.includes('tomorrow')){ const t = new Date(); t.setDate(t.getDate()+1); dateInput.value = t.toISOString().slice(0,10); dateStatus.textContent='Date set to tomorrow'; } else { dateStatus.textContent = 'Could not parse date, please choose manually.'; } }, dateStatus);
+
+  toolConfirmBtn.addEventListener('click', function(){ toolConfirm.style.display='none'; });
+  toolRetryBtn.addEventListener('click', function(){ toolConfirm.style.display='none'; toolFinal.textContent='-'; toolInput.value=''; try{ toolBtn.click(); }catch(e){} });
+
+})();
+</script>
+</body>
+</html>

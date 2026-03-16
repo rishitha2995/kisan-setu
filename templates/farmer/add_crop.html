@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Add Crop</title>
+</head>
+<body>
+    <h1>➕ Add Crop</h1>
+    <form id="add-crop-form" action="/farmer/add-crop" method="post">
+        <input type="hidden" name="sid" value="{{ sid }}">
+
+        <label for="crop-name-input">Crop Name: </label>
+        <input id="crop-name-input" type="text" name="name" required style="font-size:1.1rem;padding:0.3rem;width:60%;">
+
+        <!-- Voice controls for crop name -->
+        <label for="crop-voice-lang" style="margin-left:0.5rem;font-weight:bold;">Language:</label>
+        <select id="crop-voice-lang" aria-label="Choose language for voice input" style="margin-left:0.4rem;padding:0.3rem;font-size:1rem;">
+            <option value="en-IN">English (India)</option>
+            <option value="hi-IN">Hindi</option>
+            <option value="kn-IN">Kannada</option>
+            <option value="ta-IN">Tamil</option>
+            <option value="te-IN">Telugu</option>
+        </select>
+        <button type="button" id="crop-voice-btn" aria-label="Voice input for crop name" title="Speak crop name" style="font-size:1.2rem;margin-left:0.6rem;padding:0.3rem;border-radius:6px;">🎤</button>
+
+        <div id="crop-voice-status" aria-live="polite" style="min-height:1.2rem;color:#333;font-weight:bold;margin-top:0.5rem;"></div>
+
+        <!-- Confirmation area -->
+        <div id="crop-voice-confirm" style="display:none;border:1px solid #ddd;padding:0.6rem;margin-top:0.5rem;background:#f9f9f9;width:70%;">
+            <div id="crop-voice-final" style="font-size:1.15rem;font-weight:700;margin-bottom:0.5rem;">-</div>
+            <div style="margin-bottom:0.5rem;">Is this correct?</div>
+            <button id="crop-confirm-btn" type="button" style="padding:0.4rem 0.6rem;margin-right:0.5rem;font-size:1rem;">✅ Confirm</button>
+            <button id="crop-retry-btn" type="button" style="padding:0.4rem 0.6rem;font-size:1rem;">🔁 Retry</button>
+        </div>
+
+        <br>
+        <label>Quantity (kg): <input id="crop-qty-input" type="number" name="quantity" required style="width:120px;"></label>
+        <button type="button" id="qty-voice-btn" title="Speak quantity" style="font-size:1.1rem;margin-left:0.5rem;padding:0.3rem;border-radius:6px;">🔊</button>
+        <div id="qty-voice-status" aria-live="polite" style="min-height:1.2rem;color:#333;font-weight:bold;margin-top:0.25rem;"></div>
+        <div id="qty-voice-confirm" style="display:none;border:1px solid #ddd;padding:0.4rem;margin-top:0.25rem;background:#fff;width:30%;">
+            <div id="qty-voice-final" style="font-weight:700;"></div>
+            <div style="margin-top:0.25rem;">Is this correct?</div>
+            <button id="qty-confirm-btn" type="button">✅ Confirm</button>
+            <button id="qty-retry-btn" type="button">🔁 Retry</button>
+        </div>
+        <br>
+        <label>Price (₹/kg): <input id="crop-price-input" type="number" step="0.01" name="price" required style="width:120px;"></label>
+        <button type="button" id="price-voice-btn" title="Speak price" style="font-size:1.1rem;margin-left:0.5rem;padding:0.3rem;border-radius:6px;">🔊</button>
+        <div id="price-voice-status" aria-live="polite" style="min-height:1.2rem;color:#333;font-weight:bold;margin-top:0.25rem;"></div>
+        <div id="price-voice-confirm" style="display:none;border:1px solid #ddd;padding:0.4rem;margin-top:0.25rem;background:#fff;width:30%;">
+            <div id="price-voice-final" style="font-weight:700;"></div>
+            <div style="margin-top:0.25rem;">Is this correct?</div>
+            <button id="price-confirm-btn" type="button">✅ Confirm</button>
+            <button id="price-retry-btn" type="button">🔁 Retry</button>
+        </div>
+        <br>
+        <!-- Image selection: choose an existing static image or paste an external URL -->
+        <label for="image-choice">Image: </label>
+        <select id="image-choice" name="image_choice" style="padding:0.3rem;">
+            <option value="">-- Select from available images --</option>
+            {% for img in available_images %}
+            <option value="{{ img }}">{{ img.split('/')[-1] }}</option>
+            {% endfor %}
+        </select>
+        <span style="margin-left:0.6rem;">or paste URL: <input id="image-url" type="text" name="image_url" style="width:40%;padding:0.3rem;"></span>
+        <div id="img-preview" style="margin-top:0.6rem;">
+            <img id="preview-img" src="/static/images/crops/millet.svg" alt="preview" style="max-height:120px;border-radius:6px;object-fit:cover;">
+        </div>
+        <br>
+        <button id="add-btn" type="submit">Add</button>
+    </form>
+    <a href="/farmer?sid={{ sid }}">Back</a>
+    <script>
+    (function() {
+      const voiceBtn = document.getElementById('crop-voice-btn');
+      const input = document.getElementById('crop-name-input');
+      const status = document.getElementById('crop-voice-status');
+      const lang = document.getElementById('crop-voice-lang');
+      const confirmBox = document.getElementById('crop-voice-confirm');
+      const finalText = document.getElementById('crop-voice-final');
+      const confirmBtn = document.getElementById('crop-confirm-btn');
+      const retryBtn = document.getElementById('crop-retry-btn');
+
+      // Quantity and Price controls
+      const qtyBtn = document.getElementById('qty-voice-btn');
+      const qtyInput = document.getElementById('crop-qty-input');
+      const qtyStatus = document.getElementById('qty-voice-status');
+      const qtyConfirmBox = document.getElementById('qty-voice-confirm');
+      const qtyFinal = document.getElementById('qty-voice-final');
+      const qtyConfirmBtn = document.getElementById('qty-confirm-btn');
+      const qtyRetryBtn = document.getElementById('qty-retry-btn');
+
+      const priceBtn = document.getElementById('price-voice-btn');
+      const priceInput = document.getElementById('crop-price-input');
+      const priceStatus = document.getElementById('price-voice-status');
+      const priceConfirmBox = document.getElementById('price-voice-confirm');
+      const priceFinal = document.getElementById('price-voice-final');
+      const priceConfirmBtn = document.getElementById('price-confirm-btn');
+      const priceRetryBtn = document.getElementById('price-retry-btn');
+
+      if (!voiceBtn || !input) return;
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+      // helper: convert simple spoken numbers to numeric values
+      function wordsToNumber(s) {
+        // basic implementation for common number words (supports up to millions)
+        const small = {zero:0, one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10, eleven:11, twelve:12, thirteen:13, fourteen:14, fifteen:15, sixteen:16, seventeen:17, eighteen:18, nineteen:19};
+        const tens = {twenty:20, thirty:30, forty:40, fifty:50, sixty:60, seventy:70, eighty:80, ninety:90};
+        const scales = {hundred:100, thousand:1000, lakh:100000, million:1000000};
+        s = s.replace(/-/g,' ').toLowerCase();
+        if (!s.match(/[a-z]/)) return null;
+        let parts = s.split(/\s+/);
+        let total = 0;
+        let current = 0;
+        for (let w of parts) {
+          if (small[w] !== undefined) {
+            current += small[w];
+          } else if (tens[w] !== undefined) {
+            current += tens[w];
+          } else if (w === 'and') {
+            continue;
+          } else if (w === 'point' || w === 'dot' || w === 'decimal') {
+            // handle decimal part
+            const idx = parts.indexOf(w);
+            const intPart = parts.slice(0, idx).join(' ');
+            const decParts = parts.slice(idx+1);
+            let decStr = '';
+            for (let d of decParts) {
+              if (small[d] !== undefined) decStr += small[d].toString();
+              else if (!isNaN(parseInt(d))) decStr += String(parseInt(d));
+              else break;
+            }
+            const intNum = wordsToNumber(intPart) || 0;
+            const decNum = decStr ? parseFloat('0.' + decStr) : 0;
+            return intNum + decNum;
+          } else if (scales[w] !== undefined) {
+            current = Math.max(1, current) * scales[w];
+            total += current;
+            current = 0;
+          } else if (!isNaN(parseInt(w))) {
+            current += parseInt(w);
+          } else {
+            // unknown word
+          }
+        }
+        return total + current;
+      }
+
+      function parseNumeric(transcript) {
+        if (!transcript) return null;
+        let t = transcript.toLowerCase();
+        t = t.replace(/(rupees|rs\.?|rs\b|rupee|kilos|kilograms|kilogram|kgs|kg|rupees)/g, ' ');
+        // try to match digits first
+        const m = t.match(/[-+]?[0-9]*\.?[0-9]+/);
+        if (m) return parseFloat(m[0]);
+        // try to convert words to numbers
+        const wn = wordsToNumber(t);
+        if (wn !== null && !isNaN(wn)) return wn;
+        return null;
+      }
+
+      // generic number voice handler
+      function createNumberRecognizer(btn, inputEl, statusEl, confirmBoxEl, finalEl, confirmBtnEl, retryBtnEl) {
+        if (!btn || !inputEl) return;
+        if (!SpeechRecognition) {
+          btn.disabled = true;
+          if (statusEl) statusEl.textContent = 'Voice input not supported; try Chrome.';
+          return;
+        }
+
+        let rec = new SpeechRecognition();
+        rec.lang = lang.value || 'en-IN';
+        rec.interimResults = true;
+        rec.maxAlternatives = 1;
+        let recognizingLocal = false;
+
+        // persist language changes
+        const saved = localStorage.getItem('preferredVoiceLang');
+        if (saved) {
+          lang.value = saved;
+          rec.lang = saved;
+        }
+        lang.addEventListener('change', function() {
+          rec.lang = lang.value;
+          localStorage.setItem('preferredVoiceLang', lang.value);
+        });
+
+        rec.onstart = function() {
+          recognizingLocal = true;
+          if (statusEl) statusEl.textContent = 'Listening...';
+          if (confirmBoxEl) { confirmBoxEl.style.display = 'none'; }
+          if (finalEl) finalEl.textContent = '-';
+        };
+        rec.onresult = function(event) {
+          let interim = '';
+          let final = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) final += transcript;
+            else interim += transcript;
+          }
+          if (statusEl) statusEl.textContent = interim || final || 'Listening...';
+          if (final) {
+            const num = parseNumeric(final);
+            if (num !== null) {
+              // For quantity, make it integer; for price keep two decimals
+              const isPrice = inputEl === priceInput;
+              inputEl.value = isPrice ? (Math.round(num*100)/100) : Math.round(num);
+              if (finalEl) finalEl.textContent = inputEl.value;
+              if (confirmBoxEl) confirmBoxEl.style.display = 'block';
+              // speak back short confirmation
+              try {
+                const msg = new SpeechSynthesisUtterance('Recognized ' + inputEl.value);
+                msg.lang = lang.value || 'en-IN';
+                window.speechSynthesis.cancel();
+                window.speechSynthesis.speak(msg);
+              } catch (e) {}
+            } else {
+              if (statusEl) statusEl.textContent = 'Could not parse number, please try again.';
+            }
+          }
+        };
+        rec.onend = function() { recognizingLocal = false; };
+        rec.onerror = function(e) { if (statusEl) statusEl.textContent = 'Recognition error: ' + (e.error || 'unknown'); };
+
+        btn.addEventListener('click', function() {
+          if (recognizingLocal) rec.stop();
+          else {
+            try { rec.lang = lang.value || rec.lang; rec.start(); } catch (e) { console.warn('Start error:', e); }
+          }
+        });
+
+        if (confirmBtnEl) confirmBtnEl.addEventListener('click', function() { if (confirmBoxEl) confirmBoxEl.style.display = 'none'; });
+        if (retryBtnEl) retryBtnEl.addEventListener('click', function() { if (confirmBoxEl) confirmBoxEl.style.display = 'none'; inputEl.value = ''; try { rec.start(); } catch (e) { console.warn('Restart error:', e); } });
+      }
+
+      // initialize name recognition (existing behavior)
+      if (SpeechRecognition) {
+        let recognition = new SpeechRecognition();
+        recognition.lang = lang.value || 'en-IN';
+        recognition.interimResults = true;
+        recognition.maxAlternatives = 1;
+
+        const savedLang = localStorage.getItem('preferredVoiceLang');
+        if (savedLang) { lang.value = savedLang; recognition.lang = savedLang; }
+
+        recognition.onstart = function() {
+          status.textContent = 'Listening...';
+          confirmBox.style.display = 'none';
+          finalText.textContent = '-';
+        };
+        recognition.onresult = function(event) {
+          let interim = '';
+          let final = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) final += transcript; else interim += transcript;
+          }
+          status.textContent = interim || final || 'Listening...';
+          if (final) {
+            input.value = final;
+            finalText.textContent = final;
+            confirmBox.style.display = 'block';
+            try { const m = new SpeechSynthesisUtterance('You said: ' + final); m.lang = lang.value || 'en-IN'; window.speechSynthesis.cancel(); window.speechSynthesis.speak(m); } catch(e){}
+          }
+        };
+        recognition.onend = function() { status.textContent = ''; };
+        recognition.onerror = function(event) { status.textContent = 'Voice recognition error: ' + (event.error || 'unknown'); };
+
+        voiceBtn.addEventListener('click', function() {
+          try { recognition.lang = lang.value || recognition.lang; recognition.start(); } catch (e) { console.warn('Recognition start error:', e); }
+        });
+
+        confirmBtn.addEventListener('click', function() { document.getElementById('add-crop-form').submit(); });
+        retryBtn.addEventListener('click', function() { confirmBox.style.display = 'none'; finalText.textContent = '-'; input.value = ''; try { recognition.start(); } catch (e) { console.warn('Recognition restart error:', e); } });
+      }
+
+      // initialize qty and price recognizers
+      createNumberRecognizer(qtyBtn, qtyInput, qtyStatus, qtyConfirmBox, qtyFinal, qtyConfirmBtn, qtyRetryBtn);
+      createNumberRecognizer(priceBtn, priceInput, priceStatus, priceConfirmBox, priceFinal, priceConfirmBtn, priceRetryBtn);
+
+      // image preview handling
+      const imgChoice = document.getElementById('image-choice');
+      const imgUrl = document.getElementById('image-url');
+      const preview = document.getElementById('preview-img');
+      function updatePreview() {
+        const val = (imgUrl && imgUrl.value.trim()) || (imgChoice && imgChoice.value) || '/static/images/crops/millet.svg';
+        preview.src = val;
+      }
+      if (imgChoice) imgChoice.addEventListener('change', function(){ if (imgChoice.value) imgUrl.value=''; updatePreview(); });
+      if (imgUrl) imgUrl.addEventListener('input', function(){ if (imgUrl.value.trim()) imgChoice.value=''; updatePreview(); });
+      // init preview
+      updatePreview();
+
+    })();
+    </script>
+</body>
+</html>

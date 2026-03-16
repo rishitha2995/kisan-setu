@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Preview Backgrounds</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 24px; }
+        .gallery { display: flex; gap: 20px; flex-wrap: wrap; }
+        .card { width: 300px; border: 1px solid #e6e6e6; border-radius: 6px; overflow: hidden; box-shadow: 0 6px 18px rgba(0,0,0,0.06); }
+        .thumb { height: 180px; background-size: cover; background-position: center; }
+        .meta { padding: 12px; }
+        .meta h4 { margin: 0 0 8px 0; }
+        .actions { display: flex; gap: 8px; }
+        .btn { padding: 8px 12px; border-radius: 4px; border: 1px solid #ccc; text-decoration: none; color: #222; background: #fff; }
+        .btn.primary { background: #4CAF50; color: #fff; border: none; }
+        .selected { border: 2px solid #4CAF50; }
+    </style>
+</head>
+<body>
+    <h1>Choose Login Background</h1>
+    <p>Click <strong>Preview</strong> to open the login page with that background (for testing). Use <strong>Set as default</strong> to make the selection permanent.</p>
+    <div class="gallery">
+        {% for img in images %}
+        <div class="card {% if img.selected %}selected{% endif %}">
+            <div class="thumb" style="background-image: url('{{ img.url }}')"></div>
+            <div class="meta">
+                <h4>{{ img.filename }} {% if img.selected %}— Current{% endif %}</h4>
+                <div class="actions">
+                    <a class="btn" href="/?bg={{ img.filename }}" target="_blank">Preview</a>
+                    <form method="post" action="/set-background" style="display:inline;">
+                        <input type="hidden" name="bg" value="{{ img.filename }}">
+                        <button class="btn primary" type="submit">Set as default</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <hr>
+    <p><a href="/">Return to Login</a></p>
+</body>
+</html>
